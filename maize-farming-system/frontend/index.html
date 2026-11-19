@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script>
+    // Protect this page: kick to login if not logged in as admin
+    const user = JSON.parse(localStorage.getItem('user'));
+    if (!user || user.role !== 'admin') {
+      window.location.href = 'login.html';
+    }
+  </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard | Maize Farming System</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <!-- Include Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <h1>🌽 Maize Records</h1>
+      <nav>
+        <a href="index.html">Dashboard</a>
+        <a href="farmers.html">Farmers</a>
+        <a href="farms.html">Farms</a>
+        <a href="diseases.html">Disease Reports</a>
+        <a href="harvests.html">Harvest Records</a>
+        <a href="#" class="logout-link" onclick="logout()">Logout</a>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <header class="page-header">
+        <h2>Dashboard Overview</h2>
+      </header>
+
+      <!-- Summary Cards -->
+      <div class="cards">
+        <div class="card">
+          <span class="card-label">Total Farmers</span>
+          <span class="card-value" id="totalFarmers">-</span>
+        </div>
+        <div class="card">
+          <span class="card-label">Total Farms</span>
+          <span class="card-value" id="totalFarms">-</span>
+        </div>
+        <div class="card">
+          <span class="card-label">Disease Reports</span>
+          <span class="card-value" id="totalDiseases">-</span>
+        </div>
+        <div class="card">
+          <span class="card-label">Total Harvests</span>
+          <span class="card-value" id="totalHarvests">-</span>
+        </div>
+        <div class="card" style="border-left-color: #eab308;">
+          <span class="card-label">Total Harvest (Kg)</span>
+          <span class="card-value" id="totalKg">-</span>
+        </div>
+        <div class="card" style="border-left-color: #3b82f6;">
+          <span class="card-label">Total Revenue</span>
+          <span class="card-value" id="totalRevenue">-</span>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="grid-2">
+        <div class="panel">
+          <h3>Harvest Production by Season</h3>
+          <div class="chart-box">
+            <canvas id="harvestChart"></canvas>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>Disease Severity Distribution</h3>
+          <div class="chart-box">
+            <canvas id="diseaseChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Activity Feed -->
+      <div class="panel" style="margin-top: 24px;">
+        <h3>Recent System Activity</h3>
+        <div id="recentActivityFeed">
+          <p class="muted">Loading activity...</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    async function loadDashboard() {
+      try {
+        // 1. Load summary stats
+        const statsRes = await apiFetch('/dashboard/stats');
+        const s = statsRes.data;
+        document.getElementById('totalFarmers').textContent = s.totalFarmers;
+        document.getElementById('totalFarms').textContent = s.totalFarms;
+        document.getElementById('totalDiseases').textContent = s.totalDiseases;
+        document.getElementById('totalHarvests').textContent = s.totalHarvests;
+        document.getElementById('totalKg').textContent = s.totalQuantityKg.toLocaleString();
+        document.getElementById('totalRevenue').textContent = formatCurrency(s.totalRevenueUGX);
+
+        // 2. Load Harvest Chart
+        const seasonRes = await apiFetch('/dashboard/harvest-by-season');
+        const seasonData = seasonRes.data;
+        new Chart(document.getElementById('harvestChart'), {
+          type: 'bar',
+          data: {
+            labels: seasonData.map(d => d._id),
+            datasets: [{
+              label: 'Total Kg',
+              data: seasonData.map(d => d.totalKg),
+              backgroundColor: '#16a34a',
+              borderRadius: 6
+            }]
+          },
+          options: { responsive: true, maintainAspectRatio: false }
+        });
+
+        // 3. Load Disease Chart
+        const diseaseRes = await apiFetch('/dashboard/disease-by-severity');
+        const diseaseData = diseaseRes.data;
+        new Chart(document.getElementById('diseaseChart'), {
+          type: 'doughnut',
+          data: {
+            labels: diseaseData.map(d => d._id),
+            datasets: [{
+              data: diseaseData.map(d => d.count),
+              backgroundColor: ['#dcfce7', '#fef3c7', '#fee2e2'],
+              borderColor: ['#166534', '#92400e', '#991b1b'],
+              borderWidth: 2
+            }]
+          },
+          options: { responsive: true, maintainAspectRatio: false }
+        });
+
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    async function loadRecentActivity() {
+      try {
+        const farmsRes = await apiFetch('/farms');
+        const diseasesRes = await apiFetch('/diseases');
+
+        const recentFarms = farmsRes.data.slice(-3).reverse();
+        const recentDiseases = diseasesRes.data.slice(-3).reverse();
+
+        let html = '';
+
+        recentDiseases.forEach(d => {
+          html += `<div style="padding: 10px 0; border-bottom: 1px solid #edf2ed; display: flex; justify-content: space-between;">
+            <span>🚨 <strong>${d.reportedBy}</strong> reported <em>${d.diseaseName}</em> on Farm ${d.farmId}</span>
+            <span class="muted">${formatDate(d.reportDate)}</span>
+          </div>`;
+        });
+
+        recentFarms.forEach(f => {
+          html += `<div style="padding: 10px 0; border-bottom: 1px solid #edf2ed; display: flex; justify-content: space-between;">
+            <span>🌱 Farm <strong>${f.farmId}</strong> was registered in ${f.location}</span>
+            <span class="muted">${formatDate(f.plantingDate)}</span>
+          </div>`;
+        });
+
+        document.getElementById('recentActivityFeed').innerHTML = html;
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    loadDashboard();
+    loadRecentActivity();
+  </script>
+</body>
+</html>

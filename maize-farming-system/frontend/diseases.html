@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script>
+    // Protect this page: kick to login if not logged in as admin
+    const user = JSON.parse(localStorage.getItem('user'));
+    if (!user || user.role !== 'admin') {
+      window.location.href = 'login.html';
+    }
+  </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Disease Reports | Maize Farming System</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <h1>🌽 Maize Records</h1>
+      <nav>
+        <a href="index.html">Dashboard</a>
+        <a href="farmers.html">Farmers</a>
+        <a href="farms.html">Farms</a>
+        <a href="diseases.html">Disease Reports</a>
+        <a href="harvests.html">Harvest Records</a>
+        <a href="#" class="logout-link" onclick="logout()">Logout</a>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <header class="page-header">
+        <h2>Disease Reports</h2>
+        <button class="btn btn-primary" onclick="openModal()">+ Record Disease</button>
+      </header>
+
+      <!-- Toolbar -->
+      <div class="toolbar">
+        <input type="text" id="searchInput" placeholder="Search by disease name..." oninput="debounceSearch()">
+        <select id="severityFilter" onchange="loadReports()">
+          <option value="">All Severities</option>
+          <option value="High">High</option>
+          <option value="Medium">Medium</option>
+          <option value="Low">Low</option>
+        </select>
+      </div>
+
+      <!-- Disease Table -->
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Report ID</th>
+              <th>Farm ID</th>
+              <th>Disease Name</th>
+              <th>Symptoms</th>
+              <th>Severity</th>
+              <th>Date</th>
+              <th>Reported By</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="diseasesTableBody">
+            <!-- Rows will be inserted here -->
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <!-- Add/Edit Modal -->
+  <div class="modal" id="diseaseModal">
+    <div class="modal-card">
+      <h3 id="modalTitle">Record New Disease</h3>
+      <form id="diseaseForm">
+        <div class="form-grid">
+          <div>
+            <label>Report ID (e.g., DR006)</label>
+            <input type="text" id="reportId" required>
+          </div>
+          <div>
+            <label>Affected Farm</label>
+            <select id="farmId" required>
+              <option value="">Loading farms...</option>
+            </select>
+          </div>
+          <div class="full">
+            <label>Disease Name</label>
+            <input type="text" id="diseaseName" required>
+          </div>
+          <div class="full">
+            <label>Symptoms</label>
+            <textarea id="symptoms" required></textarea>
+          </div>
+          <div>
+            <label>Severity</label>
+            <select id="severity" required>
+              <option value="Low">Low</option>
+              <option value="Medium">Medium</option>
+              <option value="High">High</option>
+            </select>
+          </div>
+          <div>
+            <label>Report Date</label>
+            <input type="date" id="reportDate" required>
+          </div>
+          <div class="full">
+            <label>Reported By</label>
+            <input type="text" id="reportedBy" placeholder="e.g., Extension Officer Name" required>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Report</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    let isEditing = false;
+    let searchTimeout;
+
+    function statusBadge(status) {
+      const normalized = (status === 'Approved' ? 'Resolved' : status) || 'Pending';
+      const cls = normalized === 'Resolved' ? 'badge-approved' : normalized === 'Rejected' ? 'badge-rejected' : 'badge-pending';
+      return `<span class="badge ${cls}">${normalized === 'Resolved' ? 'Resolved' : normalized}</span>`;
+    }
+
+    // 1. Helper to render colored severity badges
+    function severityBadge(sev) {
+      const cls = sev === 'High' ? 'badge-high' : sev === 'Medium' ? 'badge-medium' : 'badge-low';
+      return `<span class="badge ${cls}">${sev}</span>`;
+    }
+
+    // 2. Fetch and render reports
+    async function loadReports() {
+      const search = document.getElementById('searchInput').value;
+      const severity = document.getElementById('severityFilter').value;
+      
+      let query = `?search=${search}`;
+      if (severity) query += `&severity=${severity}`;
+
+      try {
+        const res = await apiFetch(`/diseases${query}`);
+        const tbody = document.getElementById('diseasesTableBody');
+        
+        if (res.data.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="9" class="empty">No disease reports found.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = res.data.map(r => `
+          <tr>
+            <td><strong>${r.reportId}</strong></td>
+            <td>${r.farmId}</td>
+            <td>${r.diseaseName}</td>
+            <td style="max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${r.symptoms}">
+              ${r.symptoms}
+            </td>
+            <td>${severityBadge(r.severity)}</td>
+            <td>${formatDate(r.reportDate)}</td>
+            <td>${r.reportedBy}</td>
+            <td>${statusBadge(r.status)}</td>
+            <td class="actions">
+              ${((r.status === 'Approved' || r.status === 'Resolved') ? '<button class="btn btn-sm" disabled>Resolved</button>' : `<button class="btn btn-sm btn-primary" onclick="approveReport('${r.reportId}')">Resolve</button>`) }
+              <button class="btn btn-sm" onclick='editReport(${JSON.stringify(r)})'>Edit</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteReport('${r.reportId}')">Delete</button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    // 3. Populate the Farm dropdown menu
+    async function loadFarmsForDropdown() {
+      try {
+        const res = await apiFetch('/farms');
+        const select = document.getElementById('farmId');
+        select.innerHTML = `<option value="">Select a farm...</option>` + 
+          res.data.map(f => `<option value="${f.farmId}">${f.farmId} - ${f.location}</option>`).join('');
+      } catch (err) {
+        showToast('Failed to load farms for dropdown', 'error');
+      }
+    }
+
+    function debounceSearch() {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(loadReports, 300);
+    }
+
+    // 4. Open Modal
+    async function openModal(report = null) {
+      document.getElementById('diseaseModal').classList.add('open');
+      const form = document.getElementById('diseaseForm');
+      form.reset();
+      
+      await loadFarmsForDropdown();
+
+      if (report) {
+        isEditing = true;
+        document.getElementById('modalTitle').textContent = 'Edit Disease Report';
+        document.getElementById('reportId').value = report.reportId;
+        document.getElementById('reportId').disabled = true;
+        document.getElementById('farmId').value = report.farmId;
+        document.getElementById('diseaseName').value = report.diseaseName;
+        document.getElementById('symptoms').value = report.symptoms;
+        document.getElementById('severity').value = report.severity;
+        document.getElementById('reportDate').value = new Date(report.reportDate).toISOString().split('T')[0];
+        document.getElementById('reportedBy').value = report.reportedBy;
+      } else {
+        isEditing = false;
+        document.getElementById('modalTitle').textContent = 'Record New Disease';
+        document.getElementById('reportId').disabled = false;
+        // Set default date to today
+        document.getElementById('reportDate').value = new Date().toISOString().split('T')[0];
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('diseaseModal').classList.remove('open');
+    }
+
+    // 5. Handle Form Submit
+    document.getElementById('diseaseForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('reportId').value;
+      const payload = {
+        reportId: id,
+        farmId: document.getElementById('farmId').value,
+        diseaseName: document.getElementById('diseaseName').value,
+        symptoms: document.getElementById('symptoms').value,
+        severity: document.getElementById('severity').value,
+        reportDate: document.getElementById('reportDate').value,
+        reportedBy: document.getElementById('reportedBy').value
+      };
+
+      try {
+        if (isEditing) {
+          await apiFetch(`/diseases/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+          showToast('Disease report updated');
+        } else {
+          await apiFetch('/diseases', { method: 'POST', body: JSON.stringify(payload) });
+          showToast('Disease report recorded');
+        }
+        closeModal();
+        loadReports();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+
+    async function approveReport(id) {
+      try {
+        await apiFetch(`/diseases/${id}/approve`, { method: 'PATCH', body: JSON.stringify({ approvedBy: 'Admin', status: 'Resolved' }) });
+        showToast('Disease report marked as resolved');
+        loadReports();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    function editReport(report) {
+      openModal(report);
+    }
+
+    // 6. Delete Report
+    async function deleteReport(id) {
+      if (!confirm(`Delete disease report ${id}?`)) return;
+      
+      try {
+        await apiFetch(`/diseases/${id}`, { method: 'DELETE' });
+        showToast('Disease report deleted');
+        loadReports();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    // Initial Load
+    loadReports();
+  </script>
+</body>
+</html>

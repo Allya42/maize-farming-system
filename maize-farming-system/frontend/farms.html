@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script>
+    // Protect this page: kick to login if not logged in as admin
+    const user = JSON.parse(localStorage.getItem('user'));
+    if (!user || user.role !== 'admin') {
+      window.location.href = 'login.html';
+    }
+  </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Farms | Maize Farming System</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <h1>🌽 Maize Records</h1>
+      <nav>
+        <a href="index.html">Dashboard</a>
+        <a href="farmers.html">Farmers</a>
+        <a href="farms.html">Farms</a>
+        <a href="diseases.html">Disease Reports</a>
+        <a href="harvests.html">Harvest Records</a>
+        <a href="#" class="logout-link" onclick="logout()">Logout</a>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <header class="page-header">
+        <h2>Farm Management</h2>
+        <button class="btn btn-primary" onclick="openModal()">+ Register Farm</button>
+      </header>
+
+      <!-- Toolbar -->
+      <div class="toolbar">
+        <input type="text" id="searchInput" placeholder="Search by ID, location, variety..." oninput="debounceSearch()">
+      </div>
+
+      <!-- Farms Table -->
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Farm ID</th>
+              <th>Owner (Farmer ID)</th>
+              <th>Location</th>
+              <th>Size (Acres)</th>
+              <th>Soil Type</th>
+              <th>Maize Variety</th>
+              <th>Planting Date</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="farmsTableBody">
+            <!-- Rows will be inserted here -->
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <!-- Add/Edit Modal -->
+  <div class="modal" id="farmModal">
+    <div class="modal-card">
+      <h3 id="modalTitle">Register New Farm</h3>
+      <form id="farmForm">
+        <div class="form-grid">
+          <div>
+            <label>Farm ID (e.g., FM006)</label>
+            <input type="text" id="farmId" required>
+          </div>
+          <div>
+            <label>Farm Owner</label>
+            <!-- This select will be dynamically filled with farmers -->
+            <select id="farmerId" required>
+              <option value="">Loading farmers...</option>
+            </select>
+          </div>
+          <div>
+            <label>Location</label>
+            <input type="text" id="location" required>
+          </div>
+          <div>
+            <label>Size (Acres)</label>
+            <input type="number" id="sizeAcres" step="0.1" min="0.1" required>
+          </div>
+          <div>
+            <label>Soil Type</label>
+            <input type="text" id="soilType" required>
+          </div>
+          <div>
+            <label>Maize Variety</label>
+            <input type="text" id="maizeVariety" required>
+          </div>
+          <div class="full">
+            <label>Planting Date</label>
+            <input type="date" id="plantingDate" required>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Farm</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    let isEditing = false;
+    let searchTimeout;
+
+    function statusBadge(status) {
+      const normalized = (status === 'Approved' ? 'Resolved' : status) || 'Pending';
+      const cls = normalized === 'Resolved' ? 'badge-approved' : normalized === 'Rejected' ? 'badge-rejected' : 'badge-pending';
+      return `<span class="badge ${cls}">${normalized === 'Resolved' ? 'Resolved' : normalized}</span>`;
+    }
+
+    // 1. Fetch and render farms
+    async function loadFarms() {
+      const search = document.getElementById('searchInput').value;
+      try {
+        const res = await apiFetch(`/farms?search=${search}`);
+        const tbody = document.getElementById('farmsTableBody');
+        
+        if (res.data.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="9" class="empty">No farms found.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = res.data.map(f => `
+          <tr>
+            <td><strong>${f.farmId}</strong></td>
+            <td><span class="badge badge-low">${f.farmerId}</span></td>
+            <td>${f.location}</td>
+            <td>${f.sizeAcres}</td>
+            <td>${f.soilType}</td>
+            <td>${f.maizeVariety}</td>
+            <td>${formatDate(f.plantingDate)}</td>
+            <td>${statusBadge(f.status)}</td>
+            <td class="actions">
+              ${(f.status === 'Approved' || f.status === 'Resolved')
+                ? '<button class="btn btn-sm" disabled>Resolved</button>'
+                : `<button class="btn btn-sm btn-primary" onclick="approveFarm('${f.farmId}')">Approve</button>`}
+              <button class="btn btn-sm" onclick='editFarm(${JSON.stringify(f)})'>Edit</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteFarm('${f.farmId}')">Delete</button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    // 2. Populate the Farmer dropdown menu
+    async function loadFarmersForDropdown() {
+      try {
+        const res = await apiFetch('/farmers');
+        const select = document.getElementById('farmerId');
+        // Keep the default option
+        select.innerHTML = `<option value="">Select a farmer...</option>` + 
+          res.data.map(f => `<option value="${f.farmerId}">${f.farmerId} - ${f.name}</option>`).join('');
+      } catch (err) {
+        showToast('Failed to load farmers for dropdown', 'error');
+      }
+    }
+
+    function debounceSearch() {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(loadFarms, 300);
+    }
+
+    // 3. Open Modal
+    async function openModal(farm = null) {
+      document.getElementById('farmModal').classList.add('open');
+      const form = document.getElementById('farmForm');
+      form.reset();
+      
+      // Load farmers into the dropdown first
+      await loadFarmersForDropdown();
+
+      if (farm) {
+        isEditing = true;
+        document.getElementById('modalTitle').textContent = 'Edit Farm';
+        document.getElementById('farmId').value = farm.farmId;
+        document.getElementById('farmId').disabled = true;
+        document.getElementById('farmerId').value = farm.farmerId;
+        document.getElementById('location').value = farm.location;
+        document.getElementById('sizeAcres').value = farm.sizeAcres;
+        document.getElementById('soilType').value = farm.soilType;
+        document.getElementById('maizeVariety').value = farm.maizeVariety;
+        // Format date for the HTML date input (YYYY-MM-DD)
+        document.getElementById('plantingDate').value = new Date(farm.plantingDate).toISOString().split('T')[0];
+      } else {
+        isEditing = false;
+        document.getElementById('modalTitle').textContent = 'Register New Farm';
+        document.getElementById('farmId').disabled = false;
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('farmModal').classList.remove('open');
+    }
+
+    // 4. Handle Form Submit
+    document.getElementById('farmForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('farmId').value;
+      const payload = {
+        farmId: id,
+        farmerId: document.getElementById('farmerId').value,
+        location: document.getElementById('location').value,
+        sizeAcres: Number(document.getElementById('sizeAcres').value),
+        soilType: document.getElementById('soilType').value,
+        maizeVariety: document.getElementById('maizeVariety').value,
+        plantingDate: document.getElementById('plantingDate').value
+      };
+
+      try {
+        if (isEditing) {
+          await apiFetch(`/farms/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+          showToast('Farm updated successfully');
+        } else {
+          await apiFetch('/farms', { method: 'POST', body: JSON.stringify(payload) });
+          showToast('Farm registered successfully');
+        }
+        closeModal();
+        loadFarms();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+
+    async function approveFarm(id) {
+      try {
+        await apiFetch(`/farms/${id}/approve`, { method: 'PATCH', body: JSON.stringify({ approvedBy: 'Admin', status: 'Resolved' }) });
+        showToast('Farm resolved successfully');
+        loadFarms();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    function editFarm(farm) {
+      openModal(farm);
+    }
+
+    // 5. Delete Farm
+    async function deleteFarm(id) {
+      if (!confirm(`Are you sure you want to delete farm ${id}? This will also delete related disease and harvest records.`)) return;
+      
+      try {
+        await apiFetch(`/farms/${id}`, { method: 'DELETE' });
+        showToast('Farm deleted');
+        loadFarms();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    // Initial Load
+    loadFarms();
+  </script>
+</body>
+</html>

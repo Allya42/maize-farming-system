@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login | Maize Farming System</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <style>
+    /* Special styling for the login page */
+    body { display: flex; align-items: center; justify-content: center; height: 100vh; background: #14532d; }
+    .login-card { background: white; padding: 40px; border-radius: 12px; width: 100%; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+    .login-card h2 { text-align: center; color: var(--primary-dark); margin-top: 0; }
+    .toggle-link { text-align: center; display: block; margin-top: 15px; color: var(--primary); cursor: pointer; font-size: 0.9rem; text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+  <div class="login-card">
+    <h2 id="formTitle">🌽 System Login</h2>
+    
+    <form id="authForm">
+      <div style="margin-bottom: 15px;">
+        <label>Username</label>
+        <input type="text" id="username" required>
+      </div>
+      
+      <div style="margin-bottom: 15px;">
+        <label>Password</label>
+        <input type="password" id="password" required>
+      </div>
+
+      <!-- Hidden by default, shows up if you click "Register" -->
+      <div id="registerFields" style="display: none;">
+        <div style="margin-bottom: 15px;">
+          <label>Role</label>
+          <select id="role" onchange="toggleFarmerId()">
+            <option value="admin">Admin (Extension Officer)</option>
+            <option value="farmer">Farmer</option>
+          </select>
+        </div>
+        <div style="margin-bottom: 15px;" id="farmerIdGroup">
+          <label>Farmer ID (e.g., F001)</label>
+          <input type="text" id="farmerId" placeholder="Only for farmers">
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width: 100%;" id="submitBtn">Login</button>
+    </form>
+
+    <span class="toggle-link" id="toggleLink" onclick="toggleMode()">Need an account? Register here</span>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    let isRegisterMode = false;
+
+    function toggleMode() {
+      isRegisterMode = !isRegisterMode;
+      document.getElementById('formTitle').textContent = isRegisterMode ? '🌽 Register Account' : '🌽 System Login';
+      document.getElementById('submitBtn').textContent = isRegisterMode ? 'Register' : 'Login';
+      document.getElementById('toggleLink').textContent = isRegisterMode ? 'Already have an account? Login here' : 'Need an account? Register here';
+      document.getElementById('registerFields').style.display = isRegisterMode ? 'block' : 'none';
+    }
+
+    // Hide the Farmer ID field if they select Admin
+    function toggleFarmerId() {
+      const role = document.getElementById('role').value;
+      document.getElementById('farmerIdGroup').style.display = role === 'farmer' ? 'block' : 'none';
+    }
+
+    document.getElementById('authForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+
+      try {
+        if (isRegisterMode) {
+          // REGISTER LOGIC
+          const role = document.getElementById('role').value;
+          const farmerId = document.getElementById('farmerId').value;
+          
+          await apiFetch('/auth/register', {
+            method: 'POST',
+            body: JSON.stringify({ username, password, role, farmerId })
+          });
+          showToast('Registration successful! Please log in.', 'success');
+          toggleMode(); // Switch back to login mode
+          
+        } else {
+          // LOGIN LOGIC
+          const res = await apiFetch('/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ username, password })
+          });
+          
+          // Save token and user data to browser memory
+          saveSession(res.token, res.user);
+          showToast('Login successful!', 'success');
+          
+          // Redirect based on role
+          if (res.user.role === 'admin') {
+            window.location.href = 'index.html';
+          } else {
+            window.location.href = 'farmer-dashboard.html'; // We will build this next!
+          }
+        }
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+  </script>
+</body>
+</html>

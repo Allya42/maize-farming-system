@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Fields | Maize 360°</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script>
+    const user = JSON.parse(localStorage.getItem('user'));
+    if (!user || user.role !== 'farmer') {
+      window.location.href = 'login.html';
+    }
+  </script>
+  <style>
+    body { background-color: #f8faf8; }
+    .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+    .top-bar h2 { margin: 0; color: #1f2d1f; font-size: 1.8rem; }
+    .table-wrap { background: white; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.03); border: none; }
+    table th { background: #f8faf8; color: #6b7a6b; border-bottom: 1px solid #edf2ed; }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar" style="background: #14532d;">
+      <h1 style="display: flex; align-items: center; gap: 8px;">🌽 Maize 360°</h1>
+      <nav>
+        <a href="farmer-dashboard.html">Dashboard</a>
+        <a href="my-fields.html" class="active" style="background: rgba(255,255,255,0.1); border-left-color: #86efac;">My Fields</a>
+        <a href="my-harvests.html">My Harvests</a>
+        <a href="#" class="logout-link" onclick="logout()">Logout</a>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <div class="top-bar">
+        <div>
+          <h2>My Fields</h2>
+          <p style="margin: 5px 0 0 0; color: #6b7a6b; font-size: 0.9rem;">Manage the farms linked to your account.</p>
+        </div>
+        <button class="btn btn-primary" onclick="openModal()">+ Add New Field</button>
+      </div>
+
+      <div class="toolbar">
+        <input type="text" id="searchInput" placeholder="Search by farm ID or location..." oninput="debounceSearch()">
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Farm ID</th>
+              <th>Location</th>
+              <th>Size (Acres)</th>
+              <th>Soil Type</th>
+              <th>Maize Variety</th>
+              <th>Planting Date</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="farmerFieldsTableBody">
+            <!-- Populated by JS -->
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <div class="modal" id="farmModal">
+    <div class="modal-card">
+      <h3 id="modalTitle">Add New Field</h3>
+      <form id="farmForm">
+        <div class="form-grid">
+          <div>
+            <label>Farm ID</label>
+            <input type="text" id="farmId" required>
+          </div>
+          <div>
+            <label>Field Location</label>
+            <input type="text" id="location" required>
+          </div>
+          <div>
+            <label>Size (Acres)</label>
+            <input type="number" id="sizeAcres" step="0.1" min="0.1" required>
+          </div>
+          <div>
+            <label>Soil Type</label>
+            <input type="text" id="soilType" required>
+          </div>
+          <div>
+            <label>Maize Variety</label>
+            <input type="text" id="maizeVariety" required>
+          </div>
+          <div>
+            <label>Planting Date</label>
+            <input type="date" id="plantingDate" required>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Field</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    let isEditing = false;
+    let searchTimeout;
+    const currentUser = JSON.parse(localStorage.getItem('user'));
+
+    async function loadFarmerFarms() {
+      const search = document.getElementById('searchInput').value;
+      try {
+        const allFarmsRes = await apiFetch('/farms');
+        window.allFarms = allFarmsRes.data || [];
+        const res = await apiFetch(`/farms?farmerId=${currentUser.farmerId}&search=${encodeURIComponent(search)}`);
+        window.allFarmerFarms = res.data || [];
+        const tbody = document.getElementById('farmerFieldsTableBody');
+
+        if (res.data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" class="empty">You have no fields registered yet.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = res.data.map(f => `
+          <tr>
+            <td><strong>${f.farmId}</strong></td>
+            <td>${f.location}</td>
+            <td>${f.sizeAcres}</td>
+            <td>${f.soilType}</td>
+            <td>${f.maizeVariety}</td>
+            <td>${formatDate(f.plantingDate)}</td>
+            <td>${(f.status === 'Approved' || f.status === 'Resolved') ? '<span class="badge badge-approved">Resolved</span>' : f.status === 'Rejected' ? '<span class="badge badge-rejected">Rejected</span>' : '<span class="badge badge-pending">Pending Approval</span>'}</td>
+            <td class="actions">
+              <button class="btn btn-sm" onclick='editFarm(${JSON.stringify(f)})'>Edit</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteFarm('${f.farmId}')">Delete</button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    function debounceSearch() {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(loadFarmerFarms, 300);
+    }
+
+    function generateNextFarmId() {
+      const existingIds = (window.allFarms || []).map(f => String(f.farmId || '').trim().toUpperCase());
+      const numericIds = existingIds
+        .filter(id => /^FM\d+$/.test(id))
+        .map(id => Number(id.replace(/^FM/, '')))
+        .filter(num => !Number.isNaN(num));
+
+      let nextNumber = 1;
+      if (numericIds.length) nextNumber = Math.max(...numericIds) + 1;
+      return `FM${String(nextNumber).padStart(3, '0')}`;
+    }
+
+    function openModal(farm = null) {
+      document.getElementById('farmModal').classList.add('open');
+      const form = document.getElementById('farmForm');
+      form.reset();
+
+      if (farm) {
+        isEditing = true;
+        document.getElementById('modalTitle').textContent = 'Edit Field';
+        document.getElementById('farmId').value = farm.farmId;
+        document.getElementById('farmId').disabled = true;
+        document.getElementById('location').value = farm.location;
+        document.getElementById('sizeAcres').value = farm.sizeAcres;
+        document.getElementById('soilType').value = farm.soilType;
+        document.getElementById('maizeVariety').value = farm.maizeVariety;
+        document.getElementById('plantingDate').value = new Date(farm.plantingDate).toISOString().split('T')[0];
+      } else {
+        isEditing = false;
+        document.getElementById('modalTitle').textContent = 'Add New Field';
+        document.getElementById('farmId').disabled = true;
+        document.getElementById('farmId').value = generateNextFarmId();
+        document.getElementById('plantingDate').value = new Date().toISOString().split('T')[0];
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('farmModal').classList.remove('open');
+    }
+
+    function editFarm(farm) {
+      openModal(farm);
+    }
+
+    document.getElementById('farmForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('farmId').value;
+      const payload = {
+        farmId: id,
+        farmerId: currentUser.farmerId,
+        location: document.getElementById('location').value,
+        sizeAcres: Number(document.getElementById('sizeAcres').value),
+        soilType: document.getElementById('soilType').value,
+        maizeVariety: document.getElementById('maizeVariety').value,
+        plantingDate: document.getElementById('plantingDate').value
+      };
+
+      try {
+        if (isEditing) {
+          await apiFetch(`/farms/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+          showToast('Field updated successfully');
+        } else {
+          await apiFetch('/farms', { method: 'POST', body: JSON.stringify(payload) });
+          showToast('Field added successfully');
+        }
+        closeModal();
+        loadFarmerFarms();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+
+    async function deleteFarm(id) {
+      if (!confirm(`Are you sure you want to delete field ${id}? This will also remove related disease and harvest records.`)) return;
+
+      try {
+        await apiFetch(`/farms/${id}`, { method: 'DELETE' });
+        showToast('Field deleted');
+        loadFarmerFarms();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    loadFarmerFarms();
+  </script>
+</body>
+</html>

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Report Disease | Maize 360°</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <script>
+    const user = JSON.parse(localStorage.getItem('user'));
+    if (!user || user.role !== 'farmer') window.location.href = 'login.html';
+  </script>
+  <style>
+    body { background-color: #f8faf8; }
+    .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+    .top-bar h2 { margin: 0; color: #1f2d1f; font-size: 1.8rem; }
+    .table-wrap { background: white; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.03); border: none; }
+    table th { background: #f8faf8; color: #6b7a6b; border-bottom: 1px solid #edf2ed; }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar" style="background: #14532d;">
+      <h1 style="display: flex; align-items: center; gap: 8px;">🌽 Maize 360°</h1>
+      <nav>
+        <a href="farmer-dashboard.html">Dashboard</a>
+        <a href="farmer-dashboard.html#visualFieldGrid">My Fields</a>
+        <a href="my-harvests.html">My Harvests</a>
+        <a href="my-diseases.html" class="active" style="background: rgba(255,255,255,0.1); border-left-color: #86efac;">Report Disease</a>
+        <a href="#" class="logout-link" onclick="logout()">Logout</a>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <div class="top-bar">
+        <div>
+          <h2>My Disease Reports</h2>
+          <p style="margin: 5px 0 0 0; color: #6b7a6b; font-size: 0.9rem;">Report crop issues to the Extension Officer.</p>
+        </div>
+        <button class="btn btn-primary" onclick="openModal()">+ Report Disease</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Report ID</th>
+              <th>Farm ID</th>
+              <th>Disease Name</th>
+              <th>Symptoms</th>
+              <th>Severity</th>
+              <th>Date</th>
+              <th>Status/Admin Action</th>
+            </tr>
+          </thead>
+          <tbody id="diseasesTableBody">
+            <!-- Populated by JS -->
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <!-- Add Modal -->
+  <div class="modal" id="diseaseModal">
+    <div class="modal-card">
+      <h3 id="modalTitle">Report New Disease</h3>
+      <form id="diseaseForm">
+        <div class="form-grid">
+          <div>
+            <label>Report ID (e.g., DR006)</label>
+            <input type="text" id="reportId" required>
+          </div>
+          <div>
+            <label>Affected Farm</label>
+            <select id="farmId" required>
+              <option value="">Loading your farms...</option>
+            </select>
+          </div>
+          <div class="full">
+            <label>Disease Name (e.g., Fall Armyworm)</label>
+            <input type="text" id="diseaseName" required>
+          </div>
+          <div class="full">
+            <label>Symptoms</label>
+            <textarea id="symptoms" required></textarea>
+          </div>
+          <div>
+            <label>Severity</label>
+            <select id="severity" required>
+              <option value="Low">Low</option>
+              <option value="Medium">Medium</option>
+              <option value="High">High</option>
+            </select>
+          </div>
+          <div>
+            <label>Report Date</label>
+            <input type="date" id="reportDate" required>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Submit Report</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    let myFarmsData = [];
+    let farmerName = "";
+
+    async function loadDiseases() {
+      try {
+        // 1. Get farmer name & farms
+        const farmerRes = await apiFetch(`/farmers/${user.farmerId}`);
+        farmerName = farmerRes.data.name;
+
+        const farmsRes = await apiFetch(`/farms?farmerId=${user.farmerId}`);
+        myFarmsData = farmsRes.data;
+        const myFarmIds = myFarmsData.map(f => f.farmId);
+
+        // 2. Get all diseases, filter by this farmer's farms
+        const diseaseRes = await apiFetch('/diseases');
+        const myDiseases = diseaseRes.data.filter(d => myFarmIds.includes(d.farmId));
+
+        const tbody = document.getElementById('diseasesTableBody');
+        
+        if (myDiseases.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="7" class="empty">You haven't reported any diseases.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = myDiseases.map(d => {
+          const status = (d.status === 'Approved' || d.status === 'Resolved')
+            ? '<span class="badge badge-approved">Resolved</span>'
+            : d.status === 'Rejected'
+              ? '<span class="badge badge-rejected">Rejected</span>'
+              : '<span class="badge badge-pending">Awaiting Admin Review</span>';
+
+          return `
+          <tr>
+            <td><strong>${d.reportId}</strong></td>
+            <td>${d.farmId}</td>
+            <td>${d.diseaseName}</td>
+            <td style="max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${d.symptoms}">${d.symptoms}</td>
+            <td>
+               <span class="badge ${d.severity === 'High' ? 'badge-high' : d.severity === 'Medium' ? 'badge-medium' : 'badge-low'}">${d.severity}</span>
+            </td>
+            <td>${formatDate(d.reportDate)}</td>
+            <td>${status}</td>
+          </tr>
+        `}).join('');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    function openModal() {
+      document.getElementById('diseaseModal').classList.add('open');
+      document.getElementById('diseaseForm').reset();
+      
+      // Populate dropdown with ONLY their farms
+      const select = document.getElementById('farmId');
+      select.innerHTML = `<option value="">Select a farm...</option>` + 
+        myFarmsData.map(f => `<option value="${f.farmId}">${f.farmId} - ${f.location}</option>`).join('');
+
+      // Set default date to today
+      document.getElementById('reportDate').value = new Date().toISOString().split('T')[0];
+    }
+
+    function closeModal() {
+      document.getElementById('diseaseModal').classList.remove('open');
+    }
+
+    document.getElementById('diseaseForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const payload = {
+        reportId: document.getElementById('reportId').value,
+        farmId: document.getElementById('farmId').value,
+        diseaseName: document.getElementById('diseaseName').value,
+        symptoms: document.getElementById('symptoms').value,
+        severity: document.getElementById('severity').value,
+        reportDate: document.getElementById('reportDate').value,
+        reportedBy: farmerName // Automatically use their name
+      };
+
+      try {
+        await apiFetch('/diseases', { method: 'POST', body: JSON.stringify(payload) });
+        showToast('Disease reported successfully. Admin has been notified.');
+        closeModal();
+        loadDiseases();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+
+    loadDiseases();
+  </script>
+</body>
+</html>

@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script>
+    // Protect this page: kick to login if not logged in as admin
+    const user = JSON.parse(localStorage.getItem('user'));
+    if (!user || user.role !== 'admin') {
+      window.location.href = 'login.html';
+    }
+  </script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Farmers | Maize Farming System</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <h1>🌽 Maize Records</h1>
+      <nav>
+        <a href="index.html">Dashboard</a>
+        <a href="farmers.html">Farmers</a>
+        <a href="farms.html">Farms</a>
+        <a href="diseases.html">Disease Reports</a>
+        <a href="harvests.html">Harvest Records</a>
+        <a href="#" class="logout-link" onclick="logout()">Logout</a>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+      <header class="page-header">
+        <h2>Farmer Management</h2>
+        <button class="btn btn-primary" onclick="openModal()">+ Register Farmer</button>
+      </header>
+
+      <!-- Search and Filter Toolbar -->
+      <div class="toolbar">
+        <input type="text" id="searchInput" placeholder="Search by name or ID..." oninput="debounceSearch()">
+        <select id="districtFilter" onchange="loadFarmers()">
+          <option value="">All Districts</option>
+          <option value="Mukono">Mukono</option>
+          <option value="Wakiso">Wakiso</option>
+          <option value="Gulu">Gulu</option>
+          <option value="Lira">Lira</option>
+          <option value="Mbarara">Mbarara</option>
+        </select>
+      </div>
+
+      <!-- Farmers Table -->
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Farmer ID</th>
+              <th>Name</th>
+              <th>Phone</th>
+              <th>District</th>
+              <th>Village</th>
+              <th>Experience</th>
+              <th>Gender</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="farmersTableBody">
+            <!-- Rows will be inserted here by JavaScript -->
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <!-- Add/Edit Modal -->
+  <div class="modal" id="farmerModal">
+    <div class="modal-card">
+      <h3 id="modalTitle">Register New Farmer</h3>
+      <form id="farmerForm">
+        <div class="form-grid">
+          <div>
+            <label>Farmer ID (e.g., F006)</label>
+            <input type="text" id="farmerId" required>
+          </div>
+          <div>
+            <label>Full Name</label>
+            <input type="text" id="name" required>
+          </div>
+          <div>
+            <label>Phone Number</label>
+            <input type="tel" id="phone" placeholder="+256..." required>
+          </div>
+          <div>
+            <label>District</label>
+            <input type="text" id="district" required>
+          </div>
+          <div>
+            <label>Village</label>
+            <input type="text" id="village" required>
+          </div>
+          <div>
+            <label>Experience (Years)</label>
+            <input type="number" id="experienceYears" min="0" required>
+          </div>
+          <div>
+            <label>Gender</label>
+            <select id="gender" required>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Farmer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script>
+    let isEditing = false;
+    let searchTimeout;
+
+    // 1. Fetch and render farmers
+    async function loadFarmers() {
+      const search = document.getElementById('searchInput').value;
+      const district = document.getElementById('districtFilter').value;
+      
+      let query = `?search=${search}`;
+      if (district) query += `&district=${district}`;
+
+      try {
+        const res = await apiFetch(`/farmers${query}`);
+        const tbody = document.getElementById('farmersTableBody');
+        
+        if (res.data.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="8" class="empty">No farmers found.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = res.data.map(f => `
+          <tr>
+            <td><strong>${f.farmerId}</strong></td>
+            <td>${f.name}</td>
+            <td>${f.phone}</td>
+            <td>${f.district}</td>
+            <td>${f.village}</td>
+            <td>${f.experienceYears} yrs</td>
+            <td>${f.gender}</td>
+            <td class="actions">
+              <button class="btn btn-sm" onclick='editFarmer(${JSON.stringify(f)})'>Edit</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteFarmer('${f.farmerId}')">Delete</button>
+            </td>
+          </tr>
+        `).join('');
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    // 2. Debounce search (waits 300ms after typing stops)
+    function debounceSearch() {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(loadFarmers, 300);
+    }
+
+    async function generateNextFarmerId() {
+      const res = await apiFetch('/farmers');
+      const ids = (res.data || []).map(f => String(f.farmerId || '').trim().toUpperCase());
+      const numericIds = ids
+        .filter(id => /^F\d+$/.test(id))
+        .map(id => Number(id.replace(/^F/, '')))
+        .filter(num => !Number.isNaN(num));
+
+      let nextNumber = 1;
+      if (numericIds.length) nextNumber = Math.max(...numericIds) + 1;
+      return `F${String(nextNumber).padStart(3, '0')}`;
+    }
+
+    // 3. Open Modal (for Create or Edit)
+    async function openModal(farmer = null) {
+      document.getElementById('farmerModal').classList.add('open');
+      const form = document.getElementById('farmerForm');
+      form.reset();
+
+      if (farmer) {
+        isEditing = true;
+        document.getElementById('modalTitle').textContent = 'Edit Farmer';
+        document.getElementById('farmerId').value = farmer.farmerId;
+        document.getElementById('farmerId').disabled = true; // ID can't change
+        document.getElementById('name').value = farmer.name;
+        document.getElementById('phone').value = farmer.phone;
+        document.getElementById('district').value = farmer.district;
+        document.getElementById('village').value = farmer.village;
+        document.getElementById('experienceYears').value = farmer.experienceYears;
+        document.getElementById('gender').value = farmer.gender;
+      } else {
+        isEditing = false;
+        document.getElementById('modalTitle').textContent = 'Register New Farmer';
+        document.getElementById('farmerId').disabled = true;
+        document.getElementById('farmerId').value = await generateNextFarmerId();
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('farmerModal').classList.remove('open');
+    }
+
+    // 4. Handle Form Submit (Create or Update)
+    document.getElementById('farmerForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('farmerId').value;
+      const payload = {
+        farmerId: id,
+        name: document.getElementById('name').value,
+        phone: document.getElementById('phone').value,
+        district: document.getElementById('district').value,
+        village: document.getElementById('village').value,
+        experienceYears: Number(document.getElementById('experienceYears').value),
+        gender: document.getElementById('gender').value
+      };
+
+      try {
+        if (isEditing) {
+          await apiFetch(`/farmers/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+          showToast('Farmer updated successfully');
+        } else {
+          await apiFetch('/farmers', { method: 'POST', body: JSON.stringify(payload) });
+          showToast('Farmer registered successfully');
+        }
+        closeModal();
+        loadFarmers();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    });
+
+    // 5. Edit Farmer Wrapper
+    function editFarmer(farmer) {
+      openModal(farmer);
+    }
+
+    // 6. Delete Farmer
+    async function deleteFarmer(id) {
+      if (!confirm(`Are you sure you want to delete farmer ${id}? This will also delete all their farms, diseases, and harvests.`)) return;
+      
+      try {
+        await apiFetch(`/farmers/${id}`, { method: 'DELETE' });
+        showToast('Farmer deleted');
+        loadFarmers();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    // Initial Load
+    loadFarmers();
+  </script>
+</body>
+</html>
