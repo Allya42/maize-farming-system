@@ -1,4 +1,4 @@
-﻿# 🌽 Maize Farming Record Management System
+# 🌽 Maize Farming Record Management System
 
 The Maize Farming Record Management System is a full-stack, web-based application designed to digitize and streamline the agricultural record-keeping process for smallholder maize farmers and agricultural extension officers in Uganda.
 
@@ -6,14 +6,16 @@ Traditionally, farming records (like planting dates, disease outbreaks, and harv
 
 ## 📋 Project Overview
 This system solves the problem of fragmented and lost agricultural records by providing a centralized MongoDB database. It features **Role-Based Access Control (RBAC)** with two distinct dashboards:
-1. **The Admin (Extension Officer) Dashboard:** System-Wide Analytics: The Admin Dashboard features high-level summary cards (Total Farmers, Total Farms, Total Revenue) and Chart.js visualizations showing district-wide harvest production per season and disease severity distributions.
+1. **The Admin (Extension Officer) Dashboard:**Admin cridentials are admin password 123
+ System-Wide Analytics: The Admin Dashboard features high-level summary cards (Total Farmers, Total Farms, Total Revenue) and Chart.js visualizations showing district-wide harvest production per season and disease severity distributions.
 
-2. **Farmer & Farm Management: The Admin is the primary onboarding agent. When a new farmer joins the cooperative, the Admin registers them in the farmers collection, generating a unique farmerId (e.g., F006). They then register the farmer's physical land under the farms collection, linking it via the farmerId.
+Farmer & Farm Management: The Admin is the primary onboarding agent. When a new farmer joins the cooperative, the Admin registers them in the farmers collection, generating a unique farmerId (e.g., F006). They then register the farmer's physical land under the farms collection, linking it via the farmerId.
 
 Disease Verification & Resolution: When a farmer reports a disease, it appears in the Admin's "Disease Reports" table. The Admin monitors these reports. Once the Extension Officer physically visits the farm and helps the farmer treat the crops, they click the "Resolve" button. This updates the database status from "Pending" to "Resolved," which instantly removes the yellow alert from the farmer's dashboard.
 
 Cascading Data Management: If a farmer leaves the cooperative, the Admin can delete their profile. The backend is built with referential integrity; deleting a farmer automatically cascades and deletes all of their associated farms, harvests, and disease reports to prevent orphaned data in the database.
-2. **The Farmer Dashboard:**Visual Field Overview: the farmer as the register using the exact name he wes registered with at the office, his id and can set his own password and after log in. the farmer sees a visual map of their fields. The system automatically cross-references the farms collection with the diseaseReports collection. If a field has an active, unresolved disease report, the visual card turns Yellow (Needs Attention). If it is healthy, it turns Green.
+
+2. **The Farmer Dashboard:**Visual Field Overview: the farmer registers using the exact name he was registered with at the office, his id and can set his own password and after log in. the farmer sees a visual map of their fields. The system automatically cross-references the farms collection with the diseaseReports collection. If a field has an active, unresolved disease report, the visual card turns Yellow (Needs Attention). If it is healthy, it turns Green.
 
 Log Harvests: The farmer clicks "My Harvests" to record their yield. They select their farm from a restricted dropdown, enter the season (e.g., Season A 2024), the quantity in kilograms, and the market price. The system automatically calculates their total revenue (Quantity × Price) in real-time before saving it to the database.
 
