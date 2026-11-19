@@ -15,7 +15,7 @@ Disease Verification & Resolution: When a farmer reports a disease, it appears i
 
 Cascading Data Management: If a farmer leaves the cooperative, the Admin can delete their profile. The backend is built with referential integrity; deleting a farmer automatically cascades and deletes all of their associated farms, harvests, and disease reports to prevent orphaned data in the database.
 
-2. **The Farmer Dashboard:**Visual Field Overview: the farmer registers using the exact name he wes registered with at the office, his id and can set his own password and after log in. the farmer sees a visual map of their fields. The system automatically cross-references the farms collection with the diseaseReports collection. If a field has an active, unresolved disease report, the visual card turns Yellow (Needs Attention). If it is healthy, it turns Green.
+2. **The Farmer Dashboard:**Visual Field Overview: the farmer registers using the exact name he was registered with at the office, his id and can set his own password and after log in. the farmer sees a visual map of their fields. The system automatically cross-references the farms collection with the diseaseReports collection. If a field has an active, unresolved disease report, the visual card turns Yellow (Needs Attention). If it is healthy, it turns Green.
 
 Log Harvests: The farmer clicks "My Harvests" to record their yield. They select their farm from a restricted dropdown, enter the season (e.g., Season A 2024), the quantity in kilograms, and the market price. The system automatically calculates their total revenue (Quantity × Price) in real-time before saving it to the database.
 
