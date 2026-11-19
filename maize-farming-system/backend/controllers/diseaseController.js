@@ -1,14 +1,38 @@
 const DiseaseReport = require('../models/DiseaseReport');
 const Farm = require('../models/Farm');
 
+async function generateNextReportId() {
+  const reports = await DiseaseReport.find(
+    { reportId: /^DR\d+$/i },
+    { reportId: 1 }
+  ).lean();
+
+  const nextNumber = reports.reduce((highest, report) => {
+    const number = Number(String(report.reportId).replace(/^DR/i, ''));
+    return Number.isInteger(number) ? Math.max(highest, number) : highest;
+  }, 0) + 1;
+
+  return `DR${String(nextNumber).padStart(3, '0')}`;
+}
+
 exports.createReport = async (req, res, next) => {
   try {
     const farm = await Farm.findOne({ farmId: req.body.farmId });
     if (!farm) return res.status(400).json({
       success: false, message: `Referenced farm '${req.body.farmId}' does not exist`
     });
-    const report = await DiseaseReport.create(req.body);
-    res.status(201).json({ success: true, data: report });
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const reportData = { ...req.body, reportId: await generateNextReportId() };
+      try {
+        const report = await DiseaseReport.create(reportData);
+        return res.status(201).json({ success: true, data: report });
+      } catch (err) {
+        if (err && err.code !== 11000) throw err;
+      }
+    }
+
+    throw new Error('Unable to generate a unique disease report ID');
   } catch (err) { next(err); }
 };
 

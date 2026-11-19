@@ -68,7 +68,7 @@
         <div class="form-grid">
           <div>
             <label>Report ID (e.g., DR006)</label>
-            <input type="text" id="reportId" required>
+            <input type="text" id="reportId" required readonly>
           </div>
           <div>
             <label>Affected Farm</label>
@@ -156,9 +156,21 @@
       }
     }
 
-    function openModal() {
+    async function generateNextReportId() {
+      const res = await apiFetch('/diseases');
+      const ids = (res.data || []).map(report => String(report.reportId || '').trim().toUpperCase());
+      const numericIds = ids
+        .filter(id => /^DR\d+$/.test(id))
+        .map(id => Number(id.replace(/^DR/, '')));
+      const nextNumber = numericIds.length ? Math.max(...numericIds) + 1 : 1;
+      return `DR${String(nextNumber).padStart(3, '0')}`;
+    }
+
+    async function openModal() {
       document.getElementById('diseaseModal').classList.add('open');
       document.getElementById('diseaseForm').reset();
+      document.getElementById('reportId').disabled = true;
+      document.getElementById('reportId').value = await generateNextReportId();
       
       // Populate dropdown with ONLY their farms
       const select = document.getElementById('farmId');
@@ -177,7 +189,6 @@
       e.preventDefault();
       
       const payload = {
-        reportId: document.getElementById('reportId').value,
         farmId: document.getElementById('farmId').value,
         diseaseName: document.getElementById('diseaseName').value,
         symptoms: document.getElementById('symptoms').value,

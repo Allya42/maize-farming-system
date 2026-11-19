@@ -78,7 +78,7 @@
         <div class="form-grid">
           <div>
             <label>Report ID (e.g., DR006)</label>
-            <input type="text" id="reportId" required>
+            <input type="text" id="reportId" required readonly>
           </div>
           <div>
             <label>Affected Farm</label>
@@ -123,6 +123,16 @@
   <script>
     let isEditing = false;
     let searchTimeout;
+
+    async function generateNextReportId() {
+      const res = await apiFetch('/diseases');
+      const ids = (res.data || []).map(report => String(report.reportId || '').trim().toUpperCase());
+      const numericIds = ids
+        .filter(id => /^DR\d+$/.test(id))
+        .map(id => Number(id.replace(/^DR/, '')));
+      const nextNumber = numericIds.length ? Math.max(...numericIds) + 1 : 1;
+      return `DR${String(nextNumber).padStart(3, '0')}`;
+    }
 
     function statusBadge(status) {
       const normalized = (status === 'Approved' ? 'Resolved' : status) || 'Pending';
@@ -216,7 +226,8 @@
       } else {
         isEditing = false;
         document.getElementById('modalTitle').textContent = 'Record New Disease';
-        document.getElementById('reportId').disabled = false;
+        document.getElementById('reportId').disabled = true;
+        document.getElementById('reportId').value = await generateNextReportId();
         // Set default date to today
         document.getElementById('reportDate').value = new Date().toISOString().split('T')[0];
       }
@@ -231,7 +242,6 @@
       e.preventDefault();
       const id = document.getElementById('reportId').value;
       const payload = {
-        reportId: id,
         farmId: document.getElementById('farmId').value,
         diseaseName: document.getElementById('diseaseName').value,
         symptoms: document.getElementById('symptoms').value,
